@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ETL PIPELINE</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:           #07090C;
+      --surface:      #0B0E12;
+      --border:       #181E26;
+      --border-dim:   #10151B;
+      --text-dim:     #2C3A46;
+      --text-muted:   #4A5F70;
+      --text-normal:  #7090A0;
+      --text-bright:  #A8C0CC;
+      --text-white:   #C8DCE8;
+      --accent:       #3E8FC4;
+      --accent-faint: rgba(62,143,196,0.12);
+      --pass:         #2E6B40;
+      --fail:         #7A5C18;
+      --repair:       #2E5A8A;
+      --reject:       #7A2E2E;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+
+    body {
+      font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      background: var(--bg);
+      color: var(--text-normal);
+    }
+
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: transparent; }
+    .panel-body:hover::-webkit-scrollbar-thumb,
+    .modal-body:hover::-webkit-scrollbar-thumb { background: var(--border); }
+
+    .layout {
+      display: grid;
+      grid-template-rows: 36px 1fr;
+      height: 100vh;
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: 1fr minmax(160px, 320px);
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+      gap: 16px;
+      overflow: hidden;
+    }
+
+    .sys-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-white);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .header-stats {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .hstat {
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .hstat-val { color: var(--text-muted); margin-left: 4px; }
+
+    /* ── Autopilot controls ── */
+    .autopilot-controls {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+
+    .ap-toggle {
+      font-family: inherit;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      cursor: pointer;
+      background: transparent;
+      color: var(--text-dim);
+      transition: border-color 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+
+    .ap-toggle.on {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+
+    .live {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .live-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .live-dot.pulsing { animation: blink 2s ease infinite; }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.25; }
+    }
+
+    /* ── Panels ── */
+    .panel {
+      display: grid;
+      grid-template-rows: 28px 1fr;
+      overflow: hidden;
+      border-right: 1px solid var(--border);
+    }
+
+    .panel:last-child { border-right: none; }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .panel-label {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--text-dim);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .panel-count {
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.06em;
+    }
+
+    .panel-body { overflow-y: auto; }
+
+    /* ── Proposals ── */
+    .proposal {
+      border-bottom: 1px solid var(--border);
+      padding: 14px 20px;
+    }
+
+    .prop-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .prop-tags { display: flex; align-items: center; gap: 10px; }
+
+    .tag {
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1px solid;
+      padding: 1px 6px;
+      border-radius: 2px;
+    }
+
+    .tag-violation { color: var(--accent); border-color: var(--accent); }
+    .tag-action    { color: var(--text-muted); border-color: var(--border); }
+
+    .prop-field { font-size: 11px; color: var(--text-bright); margin-left: 4px; }
+    .prop-age   { font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+
+    .rule { height: 1px; background: var(--border); margin: 10px 0; }
+
+    .edata { width: 100%; border-collapse: collapse; }
+    .edata td { padding: 2px 0; vertical-align: top; font-size: 11px; }
+    .edata .k { color: var(--text-dim); padding-right: 20px; width: 110px; white-space: nowrap; }
+    .edata .v { color: var(--text-muted); word-break: break-all; }
+    .edata .k.hl { color: var(--text-muted); }
+    .edata .v.hl { color: var(--text-bright); }
+
+    .reasoning-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+
+    .reasoning-text { font-size: 11px; color: var(--text-muted); line-height: 1.65; }
+
+    .actions { display: flex; gap: 8px; margin-top: 12px; }
+
+    .btn {
+      font-family: inherit;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      padding: 5px 18px;
+      border: 1px solid;
+      border-radius: 2px;
+      cursor: pointer;
+      background: transparent;
+      transition: background 0.1s, color 0.1s;
+    }
+
+    .btn-approve { border-color: var(--accent); color: var(--accent); }
+    .btn-approve:hover:not(:disabled) { background: var(--accent); color: var(--bg); }
+    .btn-reject  { border-color: var(--border); color: var(--text-dim); }
+    .btn-reject:hover:not(:disabled) { border-color: var(--text-muted); color: var(--text-muted); }
+    .btn:disabled { opacity: 0.3; cursor: default; }
+
+    .ap-indicator {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .proposal.autopilot-mode .ap-indicator { display: flex; }
+
+    .ap-indicator-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: blink 1.4s ease infinite;
+    }
+
+    .empty { padding: 20px; font-size: 11px; color: var(--text-dim); letter-spacing: 0.06em; }
+
+    /* ── Event log ── */
+    .event-row {
+      display: grid;
+      grid-template-columns: 62px 54px 1fr;
+      gap: 12px;
+      align-items: baseline;
+      padding: 5px 20px;
+      border-bottom: 1px solid var(--border-dim);
+      font-size: 11px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .event-row:hover { background: var(--accent-faint); }
+
+    .ev-time { color: var(--text-dim); font-size: 10px; }
+    .ev-status { font-size: 10px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; }
+    .ev-passed   { color: var(--pass); }
+    .ev-failed   { color: var(--fail); }
+    .ev-repaired { color: var(--repair); }
+    .ev-rejected { color: var(--reject); }
+    .ev-info { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ev-field { color: var(--text-dim); margin-left: 8px; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(7,9,12,0.88);
+      z-index: 9998;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      width: min(560px, 92vw);
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .modal-title {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-family: inherit;
+      font-size: 14px;
+      color: var(--text-dim);
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+    }
+
+    .modal-close:hover { color: var(--text-bright); }
+
+    .modal-body {
+      overflow-y: auto;
+      padding: 16px;
+      flex: 1;
+    }
+
+    .modal-section { margin-bottom: 18px; }
+    .modal-section:last-child { margin-bottom: 0; }
+
+    .modal-section-label {
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    .violation-item {
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 2px 0;
+    }
+
+    .violation-type { color: var(--accent); margin-right: 6px; }
+
+    .modal-footer {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .modal-footer-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .field-edit {
+      font-family: inherit;
+      font-size: 11px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text-bright);
+      padding: 1px 6px;
+      width: 100%;
+      outline: none;
+    }
+
+    .field-edit:focus { border-color: var(--accent); }
+
+    /* ── Animations ── */
+    .flash { animation: flashIn 1.2s ease; }
+
+    @keyframes flashIn {
+      0%   { background: var(--accent-faint); }
+      100% { background: transparent; }
+    }
+
+    /* ── Toasts ── */
+    #toasts {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 6px;
+    }
+
+    .toast {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 8px 16px;
+      font-size: 11px;
+      color: var(--text-normal);
+      letter-spacing: 0.04em;
+      border-radius: 2px;
+      animation: toastIn 0.15s ease, toastOut 0.2s ease 2.8s forwards;
+      white-space: nowrap;
+    }
+
+    .toast.ok  { border-left: 2px solid var(--accent); }
+    .toast.err { border-left: 2px solid var(--reject); }
+    .toast.auto { border-left: 2px solid var(--text-muted); }
+
+    @keyframes toastIn {
+      from { transform: translateY(8px); opacity: 0; }
+      to   { transform: translateY(0);   opacity: 1; }
+    }
+
+    @keyframes toastOut { to { opacity: 0; } }
+
+    @media (max-width: 700px) {
+      .header-stats { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div style="position:fixed;inset:0;pointer-events:none;z-index:9997;overflow:hidden">
+  <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="4" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+    </filter>
+    <rect width="100%" height="100%" filter="url(#grain)" opacity="0.055"/>
+  </svg>
+</div>
+
+<div id="toasts"></div>
+
+<!-- Event detail modal -->
+<div class="modal-overlay" id="modal-overlay" style="display:none" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">Event Detail</span>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer" style="display:none"></div>
+  </div>
+</div>
+
+<div class="layout">
+  <header>
+    <span class="sys-name">ETL·PIPELINE</span>
+
+    <div class="header-stats" id="stats-bar"></div>
+
+    <div class="autopilot-controls">
+      <button class="ap-toggle" id="ap-btn" onclick="toggleAutopilot()">Autopilot: Off</button>
+    </div>
+
+    <div class="live">
+      <div class="live-dot pulsing" id="live-dot"></div>
+      Live
+    </div>
+  </header>
+
+  <div class="content">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-label">Approval Queue</span>
+        <span class="panel-count" id="queue-count"></span>
+      </div>
+      <div class="panel-body" id="proposals-container"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-label">Event Log</span>
+        <span class="panel-count" id="log-count"></span>
+      </div>
+      <div class="panel-body" id="events-container"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const knownProposals = new Set();
+  const knownEvents    = new Set();
+  const eventCache     = new Map();
+  let   apEnabled      = false;
+
+  function fmt(iso) {
+    const d = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'));
+    return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function toast(msg, type = 'ok') {
+    const t = document.createElement('div');
+    t.className = `toast ${type}`;
+    t.textContent = msg;
+    document.getElementById('toasts').prepend(t);
+    setTimeout(() => t.remove(), 3200);
+  }
+
+  async function toggleAutopilot() {
+    apEnabled = !apEnabled;
+    try {
+      await fetch('/autopilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: apEnabled }),
+      });
+      syncAutopilotUI();
+      toast(`autopilot ${apEnabled ? 'on' : 'off'}`, apEnabled ? 'ok' : 'auto');
+    } catch (e) {
+      toast('autopilot update failed', 'err');
+    }
+  }
+
+  function syncAutopilotUI() {
+    const btn = document.getElementById('ap-btn');
+    btn.textContent = `Autopilot: ${apEnabled ? 'On' : 'Off'}`;
+    btn.classList.toggle('on', apEnabled);
+    document.querySelectorAll('.proposal').forEach(el => {
+      el.classList.toggle('autopilot-mode', apEnabled);
+    });
+  }
+
+  function buildProposal(p) {
+    const div = document.createElement('div');
+    div.className = 'proposal' + (apEnabled ? ' autopilot-mode' : '');
+    div.dataset.id = p.id;
+
+    const event = p.event || {};
+    const rows = Object.entries(event).map(([k, v]) => {
+      const hl = k === p.field_name;
+      return `<tr>
+        <td class="k${hl ? ' hl' : ''}">${k}</td>
+        <td class="v${hl ? ' hl' : ''}">${v === null || v === undefined ? '—' : String(v)}</td>
+      </tr>`;
+    }).join('');
+
+    const actionLabel = {
+      add_nullable_field: 'add_nullable_field',
+      coerce_to_type:     `coerce → ${p.target_type || '?'}`,
+      reject_event:       'reject_event',
+    }[p.repair_action] || p.repair_action;
+
+    div.innerHTML = `
+      <div class="prop-top">
+        <div class="prop-tags">
+          <span class="tag tag-violation">${p.violation_type}</span>
+          <span class="tag tag-action">${actionLabel}</span>
+          <span class="prop-field">· ${p.field_name}</span>
+        </div>
+        <span class="prop-age">${fmt(p.created_at)}</span>
+      </div>
+      <table class="edata"><tbody>${rows}</tbody></table>
+      <div class="rule"></div>
+      <div class="reasoning-label">Claude</div>
+      <div class="reasoning-text">${p.reasoning}</div>
+      <div class="actions">
+        <button class="btn btn-approve" onclick="decide('${p.id}','approved',this)">Approve</button>
+        <button class="btn btn-reject"  onclick="decide('${p.id}','rejected',this)">Reject</button>
+      </div>
+      <div class="ap-indicator">
+        <div class="ap-indicator-dot"></div>
+        Autopilot evaluating
+      </div>
+    `;
+    return div;
+  }
+
+  function buildEvent(e) {
+    eventCache.set(e.id, e);
+    const div = document.createElement('div');
+    div.className = 'event-row';
+    div.dataset.id = e.id;
+    const d     = e.event_data || {};
+    const label = d.name || d.user_id || e.id.slice(0, 8);
+    const field  = e.violations?.[0]?.column;
+    const st     = e.validation_status;
+    div.innerHTML = `
+      <span class="ev-time">${fmt(e.created_at)}</span>
+      <span class="ev-status ev-${st}">${st}</span>
+      <span class="ev-info">${label}${field ? `<span class="ev-field">· ${field}</span>` : ''}</span>
+    `;
+    div.onclick = () => openEventModal(e.id);
+    return div;
+  }
+
+  function _buildModalView(id) {
+    const e = eventCache.get(id);
+    if (!e) return;
+
+    const d = e.event_data || {};
+    const label = d.name || d.user_id || id.slice(0, 8);
+    document.getElementById('modal-title').textContent =
+      `${label} · ${e.validation_status.toUpperCase()}`;
+
+    const dataRows = Object.entries(d).map(([k, v]) => `
+      <tr>
+        <td class="k">${k}</td>
+        <td class="v">${v === null || v === undefined ? '—' : String(v)}</td>
+      </tr>`).join('');
+
+    const violations = (e.violations || []);
+    const violationsHtml = violations.length
+      ? `<div class="modal-section">
+          <div class="modal-section-label">Violations</div>
+          ${violations.map(v => `<div class="violation-item">
+            <span class="violation-type">${v.expectation_type || 'violation'}</span>${v.column ? `· ${v.column}` : ''}
+          </div>`).join('')}
+        </div>`
+      : '';
+
+    const prop = e.proposal;
+    const proposalHtml = prop ? `
+      <div class="modal-section">
+        <div class="modal-section-label">Agent Proposal <span style="color:var(--text-muted);font-size:10px;margin-left:6px;text-transform:none;letter-spacing:0">${prop.status}</span></div>
+        <table class="edata"><tbody>
+          <tr><td class="k">field</td><td class="v hl">${prop.field_name}</td></tr>
+          <tr><td class="k">action</td><td class="v">${prop.repair_action}${prop.target_type ? ` → ${prop.target_type}` : ''}</td></tr>
+          ${prop.reviewer_note ? `<tr><td class="k">note</td><td class="v">${prop.reviewer_note}</td></tr>` : ''}
+        </tbody></table>
+        <div style="margin-top:10px">
+          <div class="reasoning-label">Claude</div>
+          <div class="reasoning-text">${prop.reasoning}</div>
+        </div>
+      </div>` : '';
+
+    document.getElementById('modal-body').innerHTML = `
+      <div class="modal-section" id="modal-event-data">
+        <div class="modal-section-label">Event Data</div>
+        <table class="edata"><tbody>${dataRows}</tbody></table>
+      </div>
+      ${violationsHtml}
+      ${proposalHtml}
+    `;
+
+    const footer = document.getElementById('modal-footer');
+    footer.style.display = 'flex';
+    footer.innerHTML = `
+      <span class="modal-footer-label">Override</span>
+      <button class="btn btn-approve" onclick="enterRepairMode('${id}')">Repair</button>
+      <button class="btn btn-reject"  onclick="rejectEvent('${id}')">Reject</button>
+    `;
+  }
+
+  function openEventModal(id) {
+    _buildModalView(id);
+    document.getElementById('modal-overlay').style.display = 'flex';
+  }
+
+  function enterRepairMode(eventId) {
+    const e = eventCache.get(eventId);
+    if (!e) return;
+    const d = e.event_data || {};
+
+    // Merge existing fields with any missing fields referenced in violations
+    const missingCols = (e.violations || [])
+      .map(v => v.column).filter(c => c && !(c in d));
+    const allFields = { ...d };
+    missingCols.forEach(c => { allFields[c] = ''; });
+
+    const editRows = Object.entries(allFields).map(([k, v]) => `
+      <tr>
+        <td class="k${missingCols.includes(k) ? ' hl' : ''}">${k}</td>
+        <td class="v"><input class="field-edit" data-key="${k}"
+          value="${v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;')}" /></td>
+      </tr>`).join('');
+
+    document.getElementById('modal-event-data').innerHTML = `
+      <div class="modal-section-label">Event Data <span style="color:var(--accent);font-size:10px;margin-left:6px;text-transform:none;letter-spacing:0">editing</span></div>
+      <table class="edata"><tbody>${editRows}</tbody></table>
+    `;
+
+    const footer = document.getElementById('modal-footer');
+    footer.innerHTML = `
+      <button class="btn btn-approve" onclick="saveRepair('${eventId}')">Save Repair</button>
+      <button class="btn btn-reject"  onclick="_buildModalView('${eventId}')">Cancel</button>
+    `;
+
+    document.querySelector('#modal-event-data .field-edit')?.focus();
+  }
+
+  async function saveRepair(eventId) {
+    const inputs = document.querySelectorAll('#modal-event-data .field-edit');
+    const data = {};
+    inputs.forEach(inp => {
+      const val = inp.value;
+      try { data[inp.dataset.key] = JSON.parse(val); } catch { data[inp.dataset.key] = val; }
+    });
+
+    // Clear any previous validation errors
+    document.getElementById('modal-validation-errors')?.remove();
+
+    try {
+      const vRes = await fetch('/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const vData = await vRes.json();
+
+      if (!vData.passed) {
+        const errDiv = document.createElement('div');
+        errDiv.id = 'modal-validation-errors';
+        errDiv.style.cssText = 'margin-top:10px;padding:8px 10px;border:1px solid var(--reject);';
+        errDiv.innerHTML = `
+          <div style="font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--reject);margin-bottom:6px">Validation failed</div>
+          ${vData.violations.map(v => `<div style="font-size:11px;color:var(--text-muted);padding:2px 0">
+            <span style="color:var(--reject)">${v.expectation_type || 'error'}</span>${v.column ? ` · ${v.column}` : ''}
+          </div>`).join('')}
+        `;
+        document.getElementById('modal-event-data').after(errDiv);
+        return;
+      }
+
+      const res = await fetch(`/events/${eventId}/override`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'repair', event_data: data }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast('event repaired', 'ok');
+      closeModal();
+      knownEvents.clear();
+      load();
+    } catch (err) {
+      toast(`repair failed: ${err.message}`, 'err');
+    }
+  }
+
+  async function rejectEvent(eventId) {
+    try {
+      const res = await fetch(`/events/${eventId}/override`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject' }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast('event rejected', 'err');
+      closeModal();
+      knownEvents.clear();
+      load();
+    } catch (err) {
+      toast(`reject failed: ${err.message}`, 'err');
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').style.display = 'none';
+  }
+
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  async function decide(id, decision, btn) {
+    const card = btn.closest('.proposal');
+    card.querySelectorAll('.btn').forEach(b => b.disabled = true);
+    btn.textContent = decision === 'approved' ? 'Approving...' : 'Rejecting...';
+    try {
+      const res = await fetch('/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposal_id: id, decision }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast(`${decision} · ${id.slice(0, 8)}`, decision === 'approved' ? 'ok' : 'err');
+      card.style.opacity = '0.3';
+      card.style.transition = 'opacity 0.4s';
+      setTimeout(() => { card.remove(); syncEmptyState(); }, 500);
+      knownProposals.delete(id);
+    } catch (err) {
+      toast(`error: ${err.message}`, 'err');
+      card.querySelectorAll('.btn').forEach(b => b.disabled = false);
+      btn.textContent = decision === 'approved' ? 'Approve' : 'Reject';
+    }
+  }
+
+  function syncEmptyState() {
+    const c = document.getElementById('proposals-container');
+    if (!c.querySelector('.proposal')) {
+      c.innerHTML = '<div class="empty">— no pending proposals —</div>';
+    }
+  }
+
+  async function load() {
+    let data;
+    try {
+      const res = await fetch('/dashboard');
+      data = await res.json();
+      document.getElementById('live-dot').classList.add('pulsing');
+    } catch {
+      document.getElementById('live-dot').classList.remove('pulsing');
+      return;
+    }
+
+    const { pending_proposals = [], recent_events = [], stats = {}, autopilot = {} } = data;
+
+    apEnabled = autopilot.enabled ?? false;
+    syncAutopilotUI();
+
+    document.getElementById('stats-bar').innerHTML = [
+      ['total',    stats.total    ?? 0],
+      ['passed',   stats.passed   ?? 0],
+      ['repaired', stats.repaired ?? 0],
+      ['failed',   stats.failed   ?? 0],
+      ['rejected', stats.rejected ?? 0],
+    ].map(([k, v]) => `<span class="hstat">${k}<span class="hstat-val"> ${v}</span></span>`).join('');
+
+    document.getElementById('queue-count').textContent =
+      pending_proposals.length ? `${pending_proposals.length} pending` : '';
+    document.getElementById('log-count').textContent =
+      recent_events.length ? `${recent_events.length} events` : '';
+
+    const pc = document.getElementById('proposals-container');
+    const pendingIds = new Set(pending_proposals.map(p => p.id));
+
+    pc.querySelectorAll('.proposal').forEach(el => {
+      if (!pendingIds.has(el.dataset.id)) {
+        el.style.opacity = '0.3';
+        el.style.transition = 'opacity 0.3s';
+        setTimeout(() => el.remove(), 400);
+      }
+    });
+
+    pending_proposals.forEach(p => {
+      if (!knownProposals.has(p.id)) {
+        if (pc.querySelector('.empty')) pc.innerHTML = '';
+        const el = buildProposal(p);
+        el.classList.add('flash');
+        pc.appendChild(el);
+        knownProposals.add(p.id);
+      }
+    });
+
+    syncEmptyState();
+
+    const ec = document.getElementById('events-container');
+    recent_events.forEach(e => {
+      eventCache.set(e.id, e);
+      if (!knownEvents.has(e.id)) {
+        if (ec.querySelector('.empty')) ec.innerHTML = '';
+        const el = buildEvent(e);
+        el.classList.add('flash');
+        ec.prepend(el);
+        knownEvents.add(e.id);
+      }
+    });
+
+    if (!ec.querySelector('.event-row')) {
+      ec.innerHTML = '<div class="empty">— no events —</div>';
+    }
+  }
+
+  load();
+  setInterval(load, 3000);
+</script>
+</body>
+</html>
