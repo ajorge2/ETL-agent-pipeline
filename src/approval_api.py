@@ -41,14 +41,19 @@ _DECISION_TOOL = {
 }
 
 
-def _evaluate_proposal_sync(proposal: RepairProposal) -> tuple[str, str]:
-    db = SessionLocal()
-    try:
-        event = db.query(PipelineEvent).filter_by(id=proposal.event_id).first()
-        event_data = event.event_data if event else {}
-    finally:
-        db.close()
+def evaluate_repair(
+    field_name: str,
+    repair_action: str,
+    target_type: str | None,
+    reasoning: str,
+    event_data: dict,
+) -> tuple[str, str]:
+    """Autopilot reviewer: decide approve/reject for a single proposed repair.
 
+    Pure LLM call with forced tool use and no persistence, so the reliability
+    eval in scripts/eval_repair_accuracy.py exercises the exact reviewer logic
+    the server's autopilot uses.
+    """
     client = Anthropic(api_key=settings.anthropic_api_key)
     response = client.messages.create(
         model="claude-sonnet-4-6",
@@ -63,10 +68,10 @@ def _evaluate_proposal_sync(proposal: RepairProposal) -> tuple[str, str]:
                     "Approve the repair if it is safe and technically valid. "
                     "Reject if the correct value cannot be determined or data integrity is at risk.\n\n"
                     f"Repair proposal:\n"
-                    f"  field:   {proposal.field_name}\n"
-                    f"  action:  {proposal.repair_action}"
-                    + (f" → {proposal.target_type}" if proposal.target_type else "")
-                    + f"\n  reason:  {proposal.reasoning}\n\n"
+                    f"  field:   {field_name}\n"
+                    f"  action:  {repair_action}"
+                    + (f" → {target_type}" if target_type else "")
+                    + f"\n  reason:  {reasoning}\n\n"
                     f"Original event: {json.dumps(event_data)}\n\n"
                     "Make a decision."
                 ),
@@ -77,6 +82,23 @@ def _evaluate_proposal_sync(proposal: RepairProposal) -> tuple[str, str]:
     tool_block = next(b for b in response.content if b.type == "tool_use")
     result = tool_block.input
     return result["decision"], result["reasoning"]
+
+
+def _evaluate_proposal_sync(proposal: RepairProposal) -> tuple[str, str]:
+    db = SessionLocal()
+    try:
+        event = db.query(PipelineEvent).filter_by(id=proposal.event_id).first()
+        event_data = event.event_data if event else {}
+    finally:
+        db.close()
+
+    return evaluate_repair(
+        proposal.field_name,
+        proposal.repair_action,
+        proposal.target_type,
+        proposal.reasoning,
+        event_data,
+    )
 
 
 async def _autopilot_loop() -> None:

@@ -172,6 +172,28 @@ All tests run against a real PostgreSQL instance. No mocks.
 
 ---
 
+## Evaluation
+
+`scripts/eval_repair_accuracy.py` measures repair reliability on a labeled set of
+24 malformed events spanning four defect classes (cleanly-coercible types,
+uncoercible types, missing optional fields, missing identity fields). It exercises
+the real validator, repair proposer (`src.agent.propose_repair`), and autopilot
+reviewer (`src.approval_api.evaluate_repair`) — only the Postgres persistence hop
+is skipped, so the scores reflect the shipped decision logic. No Kafka or Postgres
+needed; just an `ANTHROPIC_API_KEY`.
+
+```bash
+python3 scripts/eval_repair_accuracy.py --runs 3
+```
+
+Ground truth is deterministic: a value that converts cleanly is repaired, anything
+ambiguous (a non-numeric age, a missing `user_id`) is dropped. Latest result —
+**100% end-to-end keep/drop accuracy across 3 runs**, up from 79% before the agent
+was taught to choose `reject_event` instead of always coercing and leaning on the
+reviewer to catch unsafe fixes.
+
+---
+
 ## Project Structure
 
 ```
@@ -179,7 +201,8 @@ All tests run against a real PostgreSQL instance. No mocks.
 ├── docker-compose.yml          # Kafka, Zookeeper, Postgres
 ├── requirements.txt
 ├── scripts/
-│   └── produce_events.py       # sends 5 test events to Kafka
+│   ├── produce_events.py       # sends 5 test events to Kafka
+│   └── eval_repair_accuracy.py # labeled reliability eval (no infra needed)
 ├── src/
 │   ├── config.py               # pydantic-settings, loads .env
 │   ├── db.py                   # SQLAlchemy models + session

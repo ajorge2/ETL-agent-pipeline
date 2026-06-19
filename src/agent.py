@@ -52,7 +52,13 @@ _PROPOSE_REPAIR_TOOL = {
 }
 
 
-def analyze_and_propose(state: AgentState) -> AgentState:
+def propose_repair(event: dict, violations: list[dict]) -> dict:
+    """Ask Claude to propose one targeted repair for the first violation.
+
+    Pure LLM call with forced tool use and no persistence, so the same logic is
+    shared by the pipeline (analyze_and_propose) and the reliability eval in
+    scripts/eval_repair_accuracy.py.
+    """
     client = Anthropic(api_key=settings.anthropic_api_key)
 
     response = client.messages.create(
@@ -65,15 +71,27 @@ def analyze_and_propose(state: AgentState) -> AgentState:
                 "role": "user",
                 "content": (
                     "You are an ETL schema-repair agent. Analyze the first violation only and propose one repair.\n\n"
-                    f"Event:\n{json.dumps(state['event'], indent=2)}\n\n"
-                    f"Violations:\n{json.dumps(state['violations'], indent=2)}"
+                    "Pick the repair_action deliberately:\n"
+                    "- coerce_to_type: ONLY when the value converts cleanly and unambiguously to the target "
+                    'type (e.g. "25" -> int). Set target_type accordingly.\n'
+                    "- reject_event: when the correct value cannot be determined -- a non-numeric string for a "
+                    'numeric field (e.g. "twenty-five" for age), or a missing identity field such as user_id '
+                    "that must not be fabricated.\n"
+                    "- add_nullable_field: when a genuinely optional field is absent and filling it with null "
+                    "is safe.\n\n"
+                    f"Event:\n{json.dumps(event, indent=2)}\n\n"
+                    f"Violations:\n{json.dumps(violations, indent=2)}"
                 ),
             }
         ],
     )
 
     tool_block = next(b for b in response.content if b.type == "tool_use")
-    proposal = tool_block.input
+    return tool_block.input
+
+
+def analyze_and_propose(state: AgentState) -> AgentState:
+    proposal = propose_repair(state["event"], state["violations"])
 
     db = SessionLocal()
     try:
@@ -115,6 +133,13 @@ def execute_fix(state: AgentState) -> AgentState:
     db = SessionLocal()
     try:
         proposal = db.query(RepairProposal).filter_by(id=uuid.UUID(state["proposal_id"])).first()
+        event_record = db.query(PipelineEvent).filter_by(id=proposal.event_id).first()
+
+        if proposal.repair_action == "reject_event":
+            # An approved reject_event means drop the event, not synthesize a fix.
+            event_record.validation_status = "rejected"
+            db.commit()
+            return {**state, "fixed_event": None}
 
         fixed = dict(state["event"])
 
@@ -130,8 +155,6 @@ def execute_fix(state: AgentState) -> AgentState:
                 fixed[proposal.field_name] = None
 
         proposal.fixed_event = fixed
-
-        event_record = db.query(PipelineEvent).filter_by(id=proposal.event_id).first()
         event_record.validation_status = "repaired"
 
         db.commit()
