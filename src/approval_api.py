@@ -6,7 +6,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from anthropic import Anthropic
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+import secrets
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -142,6 +144,20 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ETL Approval Service", lifespan=lifespan)
+
+@app.middleware("http")
+async def restrict_pipeline_access(request: Request, call_next):
+    local = request.url.hostname in {"localhost", "127.0.0.1", "::1"} and request.client and request.client.host in {"127.0.0.1", "::1"}
+    if request.url.path != "/health" and not local:
+        expected = os.getenv("ETL_ADMIN_TOKEN", "")
+        actual = request.headers.get("authorization", "")
+        if not expected or not secrets.compare_digest(actual, "Bearer " + expected):
+            return JSONResponse({"detail": "This local pipeline requires operator authorization for remote access"}, status_code=403)
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 

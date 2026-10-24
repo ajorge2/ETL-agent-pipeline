@@ -217,3 +217,7 @@ reviewer to catch unsafe fixes.
     ├── test_integration.py
     └── test_advanced.py
 ```
+
+## Privacy and licensing
+
+See [PRIVACY.md](PRIVACY.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The software license does not relicense third-party data or publications.
